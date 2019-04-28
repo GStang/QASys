@@ -1,4 +1,4 @@
-package com.casit.controller;
+package com.swpuiot.controller;
 
 import org.springframework.stereotype.Controller;
 

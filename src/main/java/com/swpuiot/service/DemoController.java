@@ -1,4 +1,4 @@
-package com.casit.service;
+package com.swpuiot.service;
 
 import org.springframework.stereotype.Service;
 
