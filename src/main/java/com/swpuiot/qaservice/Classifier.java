@@ -11,8 +11,10 @@ import org.springframework.web.context.WebApplicationContext;
 
 import java.io.*;
 import java.util.*;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * Created by DELL on 2019/4/28.
@@ -109,7 +111,7 @@ public class Classifier {
         regionWord.addAll(symptomList);
         regionWord.addAll(denyList);
         //构造AC树
-        Trie trie = buildActree(regionWord);
+         regionTree = buildActree(regionWord);
         //构建词典
          wordTyptDict = buildWordTypeDict();
         symptom_qwds = new LinkedList<>(Arrays.asList("症状", "表征", "现象", "症候", "表现"));
@@ -141,24 +143,34 @@ public class Classifier {
     }
 
     public static Map classify(String question) {
-        Map<String,Map> data = new HashMap<>();
+        Map<String,Object> data = new HashMap<>();
         Map<String, List<String>> medicalDict = check_medical(question);
         if (medicalDict == null) {
             return data;
         }
         data.put("args", medicalDict);
-        List<List> types = new LinkedList<>();
+//        收集实体类型
+        List<List<String>> types = new LinkedList<>();
         for (List<String> strings : medicalDict.values()) {
             types.add(strings);
         }
         String questionType = "others";
-        List questionTypes = new LinkedList();
+        List<String> questionTypes = new LinkedList<>();
+//        types.stream().flatMap(new Function<List<String>, Stream<?>>() {
+//            @Override
+//            public Stream<?> apply(List<String> strings) {
+//
+//                return null;
+//            }
+//        })
         //症状
-        if (checkWord(symptom_qwds, question) && types.contains("disease")) {
+        if (checkWord(symptom_qwds, question)) {
             questionType = "disease_symptom";
             questionTypes.add(questionType);
         }
-        return null;
+        //todo
+        data.put("question_types", questionTypes);
+        return data;
     }
 
     public static Map<String,List<String>> buildWordTypeDict() {
@@ -213,6 +225,9 @@ public class Classifier {
     public static void main(String[] args) {
         try {
             Classifier.init();
+            Object data = Classifier.classify("触电有什么症状");
+            System.out.println(data);
+
         } catch (IOException e) {
             e.printStackTrace();
         }
