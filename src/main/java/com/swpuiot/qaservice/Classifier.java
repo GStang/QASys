@@ -2,19 +2,11 @@ package com.swpuiot.qaservice;
 
 import org.ahocorasick.trie.Emit;
 import org.ahocorasick.trie.Trie;
-import org.ahocorasick.trie.Trie.TrieBuilder;
-import org.ahocorasick.trie.TrieConfig;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
-import org.springframework.web.context.ContextLoader;
-import org.springframework.web.context.WebApplicationContext;
 
 import java.io.*;
 import java.util.*;
-import java.util.function.Function;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
 /**
  * Created by DELL on 2019/4/28.
@@ -54,6 +46,7 @@ public class Classifier {
 
     private static List<String> cure_qwds;
     private static Map<String, List<String>> wordTyptDict;
+    private static List<String> denyList;
 
 
     public static void init() throws IOException {
@@ -101,7 +94,7 @@ public class Classifier {
         foodList = readFile(new FileInputStream(food));
         producerList = readFile(new FileInputStream(producer));
         symptomList = readFile(new FileInputStream(symptom));
-        List<String> denyList = readFile(new FileInputStream(deny));
+        denyList = readFile(new FileInputStream(deny));
         regionWord.addAll(diseaseList);
         regionWord.addAll(checkList);
         regionWord.addAll(departmentList);
@@ -111,9 +104,9 @@ public class Classifier {
         regionWord.addAll(symptomList);
         regionWord.addAll(denyList);
         //构造AC树
-         regionTree = buildActree(regionWord);
+        regionTree = buildActree(regionWord);
         //构建词典
-         wordTyptDict = buildWordTypeDict();
+        wordTyptDict = buildWordTypeDict();
         symptom_qwds = new LinkedList<>(Arrays.asList("症状", "表征", "现象", "症候", "表现"));
         cause_qwds = new LinkedList<>(Arrays.asList("原因", "成因", "为什么", "怎么会", "怎样才", "咋样才", "怎样会", "如何会", "为啥", "为何", "如何才会", "怎么才会", "会导致", "会造成"));
         acompany_qwds = new LinkedList<>(Arrays.asList("并发症", "并发", "一起发生", "一并发生", "一起出现", "一并出现", "一同发生", "一同出现", "伴随发生", "伴随", "共现"));
@@ -143,16 +136,18 @@ public class Classifier {
     }
 
     public static Map classify(String question) {
-        Map<String,Object> data = new HashMap<>();
+        Map<String, Object> data = new HashMap<>();
         Map<String, List<String>> medicalDict = check_medical(question);
         if (medicalDict == null) {
             return data;
         }
         data.put("args", medicalDict);
 //        收集实体类型
-        List<List<String>> types = new LinkedList<>();
+        List<String> types = new LinkedList<>();
         for (List<String> strings : medicalDict.values()) {
-            types.add(strings);
+            for (String string : strings) {
+                types.add(string);
+            }
         }
         String questionType = "others";
         List<String> questionTypes = new LinkedList<>();
@@ -164,16 +159,116 @@ public class Classifier {
 //            }
 //        })
         //症状
-        if (checkWord(symptom_qwds, question)) {
+        if (checkWord(symptom_qwds, question) && types.contains("disease")) {
             questionType = "disease_symptom";
             questionTypes.add(questionType);
         }
-        //todo
-        data.put("question_types", questionTypes);
+        if (checkWord(symptom_qwds, question) && types.contains("symptom")) {
+            questionType = "symptom_disease";
+            questionTypes.add(questionType);
+        }
+
+        //原因
+        if (checkWord(cause_qwds, question) && types.contains("disease")) {
+            questionType = "disease_cause";
+            questionTypes.add(questionType);
+        }
+        //并发症
+        if (checkWord(acompany_qwds, question) && types.contains("disease")) {
+            questionType = "disease_acompany";
+            questionTypes.add(questionType);
+        }
+
+        // 推荐食品
+        if (checkWord(food_qwds, question) && types.contains("disease")) {
+            boolean denyStatus;
+            denyStatus = checkWord(denyList, question);
+            if (denyStatus) {
+                questionType = "disease_not_food";
+            } else {
+                questionType = "disease_do_food";
+            }
+            questionTypes.add(questionType);
+        }
+
+        // 已知食物找疾病
+        List<String> tempQwds = new LinkedList<>();
+        tempQwds.addAll(food_qwds);
+        tempQwds.addAll(cure_qwds);
+        if (checkWord((tempQwds), question) && types.contains("food")) {
+            boolean denyStatus;
+            denyStatus = checkWord(denyList, question);
+            if (denyStatus) {
+                questionType = "food_not_disease";
+            } else {
+                questionType = "food_do_disease";
+            }
+            questionTypes.add(questionType);
+        }
+        // 推荐药品
+        if (checkWord(drug_qwds, question) && types.contains("disease")) {
+            questionType = "disease_drug";
+            questionTypes.add(questionType);
+        }
+        // 药品治啥病
+        if (checkWord(cure_qwds, question) && types.contains("drug")) {
+            questionType = "drug_disease";
+            questionTypes.add(questionType);
+        }
+        // 疾病接受检查项目
+        if (checkWord(check_qwds, question) && types.contains("disease")) {
+            questionType = "disease_check";
+            questionTypes.add(questionType);
+        }
+        // 已知检查项目查相应疾病
+        tempQwds.removeAll(food_qwds);
+        tempQwds.addAll(check_qwds);
+        if (checkWord(tempQwds, question) && types.contains("check")) {
+            questionType = "check_disease";
+            questionTypes.add(questionType);
+        }
+        // 　症状防御
+        if (checkWord(prevent_qwds, question) && types.contains("disease")) {
+            questionType = "disease_prevent";
+            questionTypes.add(questionType);
+        }
+        // 疾病医疗周期
+        if (checkWord(lasttime_qwds, question) && types.contains("disease")) {
+            questionType = "disease_lasttime";
+            questionTypes.add(questionType);
+        }
+        // 疾病治疗方式
+        if (checkWord(cureway_qwds, question) && types.contains("disease")) {
+            questionType = "disease_cureway";
+            questionTypes.add(questionType);
+        }
+
+        // 疾病治愈可能性
+        if (checkWord(cureprob_qwds, question) && types.contains("disease")) {
+            questionType = "disease_cureprob";
+            questionTypes.add(questionType);
+        }
+
+        // 疾病易感染人群
+        if (checkWord(easyget_qwds, question) && types.contains("disease")) {
+            questionType = "disease_easyget";
+            questionTypes.add(questionType);
+        }
+
+        // 若没有查到相关的外部查询信息，那么则将该疾病的描述信息返回
+        if (questionTypes.size() == 0 && questionTypes.contains("disease")) {
+            questionTypes.add("disease_desc");
+        }
+
+        // 若没有查到相关的外部查询信息，那么则将该疾病的描述信息返回
+        if (questionTypes.size() == 0 && questionTypes.contains("symptom")) {
+            questionTypes.add("symptom_disease");
+        }
+        data.put("questionTypes", questionTypes);
         return data;
     }
 
-    public static Map<String,List<String>> buildWordTypeDict() {
+    public static Map<String, List<String>> buildWordTypeDict() {
         Map<String, List<String>> map = new HashMap<>();
         for (String wd : regionWord) {
             System.out.println(wd);
@@ -240,15 +335,16 @@ public class Classifier {
                 .build();
     }
 
-    public static boolean checkWord(List words, String question) {
-        if (words.contains(question)) {
-            return true;
-        } else {
-            return false;
+    public static boolean checkWord(List<String> words, String question) {
+        for (String word : words) {
+            if (question.contains(word)) {
+                return true;
+            }
         }
+        return false;
     }
 
-    public static Map<String,List<String>> check_medical(String question){
+    public static Map<String, List<String>> check_medical(String question) {
         List<String> regionWords = new LinkedList<>();
         Collection<Emit> Emits = regionTree.parseText(question);
         for (Emit emit : Emits) {
@@ -268,7 +364,7 @@ public class Classifier {
                 finalWords.add(word);
             }
         }
-        Map<String,List<String>> map = new HashMap<>();
+        Map<String, List<String>> map = new HashMap<>();
         for (String finalWord : finalWords) {
             map.put(finalWord, wordTyptDict.get(finalWord));
         }
